@@ -1,0 +1,15 @@
+fastapi==0.109.0
+uvicorn==0.27.0
+python-multipart==0.0.9
+torch==2.2.0
+torchvision==0.17.0
+transformers==4.37.2
+opencv-python-headless==4.9.0.80
+matplotlib==3.8.2
+ftfy==6.1.3
+regex==2023.12.25
+tqdm==4.66.1
+scikit-learn==1.4.0
+scikit-image==0.22.0
+# Segment Anything must be installed from repo or updated pypi
+git+https://github.com/facebookresearch/segment-anything.git

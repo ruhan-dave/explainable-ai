@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeepSeek Mimic OCR</title>
+    <style>
+        body { font-family: sans-serif; max-width: 1000px; margin: 0 auto; padding: 20px; background-color: #f5f5f5; }
+        .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .step { display: none; margin-top: 20px; padding: 20px; border: 1px solid #ddd; border-radius: 5px; }
+        .step.active { display: block; border-left: 5px solid #007bff; }
+        .btn { padding: 10px 20px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .btn:disabled { background-color: #ccc; cursor: not-allowed; }
+        .loading { display: none; color: #666; font-style: italic; margin-top:10px; font-weight: bold;}
+        img { max-width: 100%; border: 1px solid #eee; margin-top: 10px; }
+        input[type="text"] { padding: 8px; width: 300px; }
+        .error-msg { color: red; font-weight: bold; margin-top: 10px; display: none;}
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>DeepSeek Mimic: Explanability Pipeline</h1>
+    <div id="connection-status" style="padding: 10px; background: #e8f5e9; border-radius: 4px; margin-bottom: 20px;">
+        Checking connection...
+    </div>
+
+    <div id="step1" class="step active">
+        <h2>Step 1: Input & Initialization</h2>
+        <input type="file" id="fileInput"><br><br>
+        <label>Queries:</label> <input type="text" id="prompts" value="SAM, ViT, Encoder"><br><br>
+        <button class="btn" onclick="uploadImage()">Initialize Pipeline</button>
+        <div class="loading" id="load1">Uploading and Preprocessing...</div>
+        <div class="error-msg" id="err1"></div>
+    </div>
+
+    <div id="step2" class="step">
+        <h2>Step 2: Vision Encoding (Grad-CAM++)</h2>
+        <button class="btn" onclick="runVision()">Run Grad-CAM</button>
+        <div class="loading" id="load2">Generating Heatmaps...</div>
+        <div id="heatmaps"></div>
+        <br><button class="btn" id="next2" disabled onclick="showStep(3)">Next: Segmentation</button>
+    </div>
+
+    <div id="step3" class="step">
+        <h2>Step 3: Segmentation (SAM)</h2>
+        <button class="btn" onclick="runSegmentation()">Run SAM</button>
+        <div class="loading" id="load3">Segmenting...</div>
+        <div id="segResult"></div>
+        <br><button class="btn" id="next3" disabled onclick="showStep(4)">Next: Emergence</button>
+    </div>
+
+    <div id="step4" class="step">
+        <h2>Step 4: Semantic Emergence</h2>
+        <button class="btn" onclick="runEmergence()">Classify Patches</button>
+        <div class="loading" id="load4">Classifying...</div>
+        <pre id="emergenceResult"></pre>
+        <br><button class="btn" id="next4" disabled onclick="showStep(5)">Next: Fusion</button>
+    </div>
+
+    <div id="step5" class="step">
+        <h2>Step 5: Global Fusion</h2>
+        <button class="btn" onclick="runFusion()">Generate Overlay</button>
+        <div class="loading" id="load5">Fusing...</div>
+        <div id="finalImage"></div>
+        <br><button class="btn" id="next5" disabled onclick="showStep(6)">Next: Structural Verification</button>
+    </div>
+
+    <div id="step6" class="step">
+        <h2>Step 6: Pragmatic Structural Recovery</h2>
+        <label>Target Text:</label> <input type="text" id="structTarget" value="SAM">
+        <button class="btn" onclick="runStructure()">Verify Structure</button>
+        <div class="loading" id="load6">Running Box-Guided SAM...</div>
+        <div id="structResult"></div>
+        <br><button class="btn" id="next6" disabled onclick="showStep(7)">Next: LIME Analysis</button>
+    </div>
+
+    <div id="step7" class="step">
+        <h2>Step 7: Structure-Aware LIME</h2>
+        <button class="btn" onclick="runLIME()">Run LIME Analysis</button>
+        <div class="loading" id="load7">Running Perturbations (30s)...</div>
+        <div id="limeResult"></div>
+    </div>
+
+</div>
+
+<script>
+    // --- SMART URL DETECTION ---
+    let API_URL = "http://127.0.0.1:8000"; // Default fallback
+    const statusDiv = document.getElementById('connection-status');
+
+    if (window.location.protocol.startsWith('http')) {
+        // We are running on a server (localhost or cloud), use relative path
+        API_URL = ""; 
+        statusDiv.innerText = "DeepSeek OCR Pipeline (Mimic) Explainability";
+    } else {
+        // We are running as a file (file://), forcing localhost
+        statusDiv.innerHTML = "⚠️ <strong>Warning:</strong> You opened this as a file. Please verify Docker is running on Port 8000.";
+    }
+
+    // --- GENERIC API CALLER ---
+    async function callAPI(endpoint, method, body=null, loadId, nextStep=null) {
+        const loader = document.getElementById(loadId);
+        const errDiv = document.getElementById(loadId.replace('load', 'err')) || document.createElement('div');
+        
+        loader.style.display = 'block';
+        errDiv.style.display = 'none';
+        
+        try {
+            console.log(`Calling ${API_URL}${endpoint}...`);
+            
+            const res = await fetch(`${API_URL}${endpoint}`, {
+                method: method,
+                body: body
+            });
+
+            if (!res.ok) {
+                const txt = await res.text();
+                throw new Error(`Server Error (${res.status}): ${txt}`);
+            }
+
+            const data = await res.json();
+            
+            if (data.error) throw new Error(data.error);
+            
+            return data;
+        } catch (e) {
+            console.error(e);
+            alert("Error: " + e.message);
+            errDiv.innerText = e.message;
+            errDiv.style.display = 'block';
+            throw e; // Stop execution
+        } finally {
+            loader.style.display = 'none';
+        }
+    }
+
+    function showStep(n) {
+        document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
+        document.getElementById('step' + n).classList.add('active');
+    }
+
+    // --- STEP FUNCTIONS ---
+
+    async function uploadImage() {
+        const file = document.getElementById('fileInput').files[0];
+        const prompts = document.getElementById('prompts').value;
+        if (!file) return alert("Select a file");
+        
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('prompts', prompts);
+        
+        try {
+            await callAPI('/upload', 'POST', fd, 'load1');
+            showStep(2);
+        } catch(e) {} // Error handled in callAPI
+    }
+
+    async function runVision() {
+        try {
+            const data = await callAPI('/step1_vision', 'POST', null, 'load2');
+            let html = "";
+            for(let [k,v] of Object.entries(data.heatmaps)) {
+                html += `<div><strong>${k}</strong><br><img src="data:image/png;base64,${v.overlay}"></div>`;
+            }
+            document.getElementById('heatmaps').innerHTML = html;
+            document.getElementById('next2').disabled=false;
+        } catch(e) {}
+    }
+
+    async function runSegmentation() {
+        try {
+            const data = await callAPI('/step2_segmentation', 'POST', null, 'load3');
+            document.getElementById('segResult').innerHTML = `<img src="data:image/png;base64,${data.visualization}">`;
+            document.getElementById('next3').disabled=false;
+        } catch(e) {}
+    }
+
+    async function runEmergence() {
+        try {
+            const data = await callAPI('/step3_emergence', 'POST', null, 'load4');
+            document.getElementById('emergenceResult').innerText = JSON.stringify(data.emerged_elements, null, 2);
+            document.getElementById('next4').disabled=false;
+        } catch(e) {}
+    }
+
+    async function runFusion() {
+        try {
+            const data = await callAPI('/step4_fusion', 'POST', null, 'load5');
+            document.getElementById('finalImage').innerHTML = `<img src="data:image/png;base64,${data.final_image}">`;
+            document.getElementById('next5').disabled=false;
+        } catch(e) {}
+    }
+
+    async function runStructure() {
+        const target = document.getElementById('structTarget').value;
+        const fd = new FormData();
+        fd.append('target_text', target);
+        try {
+            const data = await callAPI('/step5_structure_verification', 'POST', fd, 'load6');
+            document.getElementById('structResult').innerHTML = `<img src="data:image/png;base64,${data.visualization}">`;
+            document.getElementById('next6').disabled=false;
+        } catch(e) {}
+    }
+
+    async function runLIME() {
+        const target = document.getElementById('structTarget').value;
+        const fd = new FormData();
+        fd.append('target_text', target);
+        try {
+            const data = await callAPI('/step6_lime_analysis', 'POST', fd, 'load7');
+            document.getElementById('limeResult').innerHTML = `<img src="data:image/png;base64,${data.visualization}">`;
+        } catch(e) {}
+    }
+</script>
+
+</body>
+</html>
