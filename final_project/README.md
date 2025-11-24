@@ -21,19 +21,29 @@ A CPU-optimized explainable AI pipeline for OCR using DeepSeek models, SAM, and 
    pip install -r requirements.txt
    ```
 
-4. Run the backend:
+4. Run the application:
    ```bash
    python pipeline.py
    ```
-   The API will be available at http://localhost:8000
+   Open http://localhost:8000 in your browser to access the web interface.
 
-5. Set up frontend (in separate terminal):
+## Docker Deployment
+
+For production deployment or easier setup:
+
+1. Build the Docker image:
    ```bash
-   cd frontend
-   npm install
-   npm run dev
+   docker build -t deepseek-mimic .
    ```
-   The frontend will be at http://localhost:5173
+
+2. Run the container:
+   ```bash
+   docker run -p 8000:8000 deepseek-mimic
+   ```
+
+3. Access at http://localhost:8000
+
+The Dockerfile automatically downloads SAM weights during build.
 
 ## Features
 
@@ -84,4 +94,4 @@ LIME then perturbs these superpixels by randomly turning them on and off (e.g., 
 
 By fitting a linear regression model to the relationship between which superpixels are visible and the resulting confidence scores, LIME estimates the importance of each region. 
 
-The final visualization highlights the contours or pixels that most strongly contributed to the classification—such as the tip and shaft of an arrow—giving a clear, human-interpretable explanation of CLIP’s decision.
+The final visualization highlights the contours or pixels that most strongly contributed to the classification—such as the tip and shaft of an arrow—giving a clear, interpretable explanation of CLIP’s decision.
