@@ -1,4 +1,5 @@
 import os
+# Core libraries
 import cv2
 import torch
 import numpy as np
@@ -26,6 +27,7 @@ from PIL import Image
 # --- UTILITIES ---
 
 def gradcampp_clip_single(model, pixel_values, input_ids, text_index, layer_path, image_size):
+    # Compute GradCAM++ heatmap for a specific CLIP layer and text prompt
     activations = {}
     gradients = {}
 
@@ -97,6 +99,7 @@ def gradcampp_clip_single(model, pixel_values, input_ids, text_index, layer_path
     return cam
 
 def run_clip_gradcam(model, processor, image, text_prompts, target_text_idx, layers=None):    
+    # Run GradCAM++ across multiple CLIP layers and average results
     layers = [
             "vision_model.encoder.layers.2",
             "vision_model.encoder.layers.4",
@@ -130,6 +133,7 @@ def run_clip_gradcam(model, processor, image, text_prompts, target_text_idx, lay
     return combined, per_layer_maps
 
 def show_cam_on_image(img_np, heatmap, alpha=0.4):
+    # Overlay GradCAM heatmap on original image
     if img_np.dtype != np.uint8: img_np = (img_np * 255).astype(np.uint8)
     heatmap = np.clip(heatmap, 0, 1)
     if heatmap.shape != img_np.shape[:2]:
@@ -142,12 +146,14 @@ def show_cam_on_image(img_np, heatmap, alpha=0.4):
 # --- CLASSES ---
 
 class StructureAwareLIME:
+    # LIME explainer that perturbs image segments to explain CLIP predictions
     def __init__(self, clip_model, clip_processor, device):
         self.model = clip_model
         self.processor = clip_processor
         self.device = device
 
     def run_structural_explanation(self, image_rgb, struct_mask, target_text, n_samples=100):
+        # Extract ROI from structural mask and run LIME on segments
         rows, cols = np.where(struct_mask)
         y1, y2 = np.min(rows), np.max(rows)
         x1, x2 = np.min(cols), np.max(cols)
@@ -181,6 +187,7 @@ class StructureAwareLIME:
         return roi, segments, reg.coef_
 
 class DeepSeekMimicOCR:
+    # Main pipeline class for explainable OCR using CLIP and SAM
     def __init__(self):
         # Intelligent Device Selection
         if torch.cuda.is_available():
@@ -223,6 +230,7 @@ class DeepSeekMimicOCR:
         print("Pipeline initialized.")
 
     def preprocess(self, image_bytes):
+        # Decode image bytes to RGB array, resize if large
         nparr = np.frombuffer(image_bytes, np.uint8)
         image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         if image is None: raise ValueError("Invalid Image")
@@ -238,19 +246,23 @@ app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 session_data = {"image": None, "pil_image": None, "refined_masks": [], "emerged_tokens": [], "pipeline_log": {}, "verified_mask": None}
+# Global session state for pipeline steps
 pipeline = None
 
 @app.on_event("startup")
 def load_models():
+    # Load AI models on app start
     global pipeline
     pipeline = DeepSeekMimicOCR()
 
 # -- SERVE FRONTEND --
 @app.get("/")
 async def read_index():
+    # Serve the main HTML frontend
     return FileResponse('index.html')
 
 def plt_to_base64():
+    # Convert matplotlib figure to base64 string
     buf = io.BytesIO()
     plt.savefig(buf, format='png', bbox_inches='tight')
     buf.seek(0)
@@ -258,6 +270,7 @@ def plt_to_base64():
     return base64.b64encode(buf.getvalue()).decode('utf-8')
 
 def numpy_to_base64(img_array):
+    # Convert numpy image array to base64
     pil_img = Image.fromarray(img_array)
     buff = io.BytesIO()
     pil_img.save(buff, format="PNG")
@@ -265,6 +278,7 @@ def numpy_to_base64(img_array):
 
 @app.post("/upload")
 async def upload(file: UploadFile = File(...), prompts: str = Form(None)):
+    # Upload image and set up session for pipeline
     contents = await file.read()
     try:
         image = pipeline.preprocess(contents)
@@ -277,6 +291,7 @@ async def upload(file: UploadFile = File(...), prompts: str = Form(None)):
 
 @app.post("/step1_vision")
 async def step1():
+    # Step 1: Generate GradCAM heatmaps for each prompt
     if session_data["image"] is None: raise HTTPException(400, "No image")
     prompts = session_data["pipeline_log"]['pipeline_params']['candidate_prompts']
     pil = session_data["pil_image"]
@@ -288,6 +303,7 @@ async def step1():
 
 @app.post("/step2_segmentation")
 async def step2():
+    # Step 2: Generate and filter SAM masks
     if session_data["image"] is None: raise HTTPException(400, "No image")
     masks = pipeline.mask_generator.generate(session_data["image"])
     refined = [m for m in masks if 500 < m['area'] < (session_data["image"].size * 0.5)]
@@ -300,6 +316,7 @@ async def step2():
 
 @app.post("/step3_emergence")
 async def step3():
+    # Step 3: Classify mask crops with CLIP to find elements
     if session_data["image"] is None: raise HTTPException(400, "No image")
     labels = session_data["pipeline_log"]['pipeline_params']['candidate_prompts'] + ["Arrow", "Box", "Diagram"]
     elements = []
@@ -316,6 +333,7 @@ async def step3():
 
 @app.post("/step4_fusion")
 async def step4():
+    # Step 4: Visualize detected elements on image
     vis = np.array(session_data["pil_image"]).copy()
     for e in session_data.get('emerged_tokens', []):
         x,y,w,h = [int(v) for v in e['bbox']]
@@ -325,6 +343,7 @@ async def step4():
 
 @app.post("/step5_structure_verification")
 async def step5(target_text: str = Form("SAM")):
+    # Step 5: Verify target element with SAM predictor
     cands = [e for e in session_data['emerged_tokens'] if target_text.lower() in e['predicted_token'].lower()]
     if not cands: return {"error": "Target not found"}
     best = sorted(cands, key=lambda x: x['confidence'], reverse=True)[0]
@@ -347,6 +366,7 @@ async def step5(target_text: str = Form("SAM")):
 
 @app.post("/step6_lime_analysis")
 async def step6(target_text: str = Form("SAM")):
+    # Step 6: Run LIME explanation on verified structure
     if session_data["verified_mask"] is None: return {"error": "Run Step 5 first"}
     explainer = StructureAwareLIME(pipeline.clip_model, pipeline.clip_processor, pipeline.device)
     roi, segs, weights = explainer.run_structural_explanation(session_data["image"], session_data["verified_mask"], target_text)
