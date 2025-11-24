@@ -36,5 +36,3 @@ A CPU-optimized explainable AI pipeline for OCR using DeepSeek models, SAM, and 
 - Structure: MobileSAM for segmentation
 - Explainability: Contextual LIME
 - Fusion: Chain-of-thought synthesis
-
-Switch between Demo Mode (mock data) and Live Mode (connects to backend).
