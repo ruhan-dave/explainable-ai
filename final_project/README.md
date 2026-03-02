@@ -95,3 +95,22 @@ LIME then perturbs these superpixels by randomly turning them on and off (e.g., 
 By fitting a linear regression model to the relationship between which superpixels are visible and the resulting confidence scores, LIME estimates the importance of each region. 
 
 The final visualization highlights the contours or pixels that most strongly contributed to the classification—such as the tip and shaft of an arrow—giving a clear, interpretable explanation of CLIP’s decision.
+
+======================================================================================================================================================
+Step 1: Vision
+"We start with a 'Vision-First' approach. Before we try to read text or find boxes, we want to know: What grabs the model's attention? By running GradCAM on the CLIP encoder, we get this heat map. It proves the model isn't just guessing; it's actually attending to the relevant areas of the image based on our prompts."
+
+Step 2: Segmentation
+"Now we move to Object Discovery. Here, we use the Segment Anything Model (SAM) in a 'blind' mode. We aren't telling it what to look for, just to find everything that looks like a distinct object. We filter out the tiny noise and huge backgrounds to get a clean set of candidate regions."
+
+Step 3: Emergence
+"This is where the magic happens—Semantic Emergence. We take those blind segments and feed them into CLIP. We ask CLIP: 'Is this an Arrow? A Loop? A ViT block?' We only keep the matches where the model is confident. This effectively turns a raw image into a structured list of semantic elements."
+
+Step 4: Fusion
+"Here we bring it all together. The Global Fusion step overlays our findings back onto the source image. This acts as our 'sanity check'—we can immediately see if the model has correctly understood the relationship between the labels and the visual diagram components."
+
+Step 5: Structure Verification
+"But what if we want to understand why a specific element was chosen? In this step, I select the 'Loop' element. We pass this specific region back into the SAM Predictor to get a pixel-perfect mask. This isolates the object completely from the rest of the diagram, setting the stage for deep analysis."
+
+Step 6: LIME Analysis
+"Finally, we have the Explanation. We use a custom implementation of LIME here. We break the object into 'superpixels' and flicker them on and off to see how CLIP's confidence changes. The green areas you see aren't just random highlights—they are the specific pixels that caused the model to say 'This is a Loop.' It's the ultimate proof of the model's reasoning."
